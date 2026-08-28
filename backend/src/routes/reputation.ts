@@ -3,6 +3,7 @@ import { z, ZodError } from 'zod';
 import { CertificateService } from '../services/CertificateService';
 import { queryTimescale } from '../db/timescale';
 import { readCache, reputationKey, writeCache } from '../indexer/cache';
+import { buildReputationVC } from '../lib/vc';
 
 const router = Router();
 
@@ -149,6 +150,28 @@ const loadReputation = async (address: string): Promise<Reputation> => {
     total: Number(row.total),
   };
 };
+
+// GET /:address/vc - Returns a signed W3C Verifiable Credential for the address
+router.get('/:address/vc', async (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  if (typeof address !== 'string' || !STELLAR_ADDRESS.test(address)) {
+    res.status(400).json({ error: 'Invalid Stellar address' });
+    return;
+  }
+
+  try {
+    const stats = await loadReputation(address);
+    const vc = await buildReputationVC(stats);
+    res
+      .set('Content-Type', 'application/ld+json')
+      .status(200)
+      .json(vc);
+  } catch (error) {
+    console.error('Error generating Verifiable Credential:', error);
+    res.status(500).json({ error: 'Failed to generate Verifiable Credential' });
+  }
+});
 
 // GET /:address - Aggregate compliance history, served from Redis when available
 router.get('/:address', async (req: Request, res: Response) => {
